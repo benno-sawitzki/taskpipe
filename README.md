@@ -63,6 +63,40 @@ taskpipe insights                # learned patterns from your data
 taskpipe review                  # weekly review summary
 ```
 
+### Reminders
+
+```bash
+taskpipe remind <id> "in 2h"              # remind in 2 hours
+taskpipe remind <id> "tomorrow 9am"       # remind tomorrow at 9
+taskpipe remind <id> "2026-02-15 15:00"   # specific datetime
+taskpipe remind <id> "tonight"            # 20:00 today
+taskpipe remind <id> --remove             # clear all reminders
+taskpipe reminders                        # list all upcoming reminders
+taskpipe reminders --due                  # reminders that have fired
+```
+
+Supported time formats: `in 30m`, `in 2h`, `in 1d`, `in 1w`, `tomorrow`, `tomorrow 9am`, `tonight`, `monday`, `tuesday 10am`, ISO datetime.
+
+### Calendar Integration
+
+Requires `gog` CLI with Google Calendar access.
+
+```bash
+taskpipe calendar                # today's events + free slots
+taskpipe calendar --tomorrow     # tomorrow's events
+taskpipe calendar --week         # this week overview
+taskpipe briefing                # smart daily briefing (calendar + tasks + reminders)
+```
+
+### Enhanced Planning
+
+```bash
+taskpipe plan --calendar         # plan around your calendar free slots
+taskpipe plan --morning          # plan just the morning (until 12:00)
+taskpipe plan --afternoon        # plan afternoon (12:00-18:00)
+taskpipe plan --calendar --morning  # combine: morning free slots only
+```
+
 ### Ghost Tasks
 
 Auto-suggested tasks from your other tools (leadpipe, contentq):

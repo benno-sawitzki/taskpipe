@@ -20,6 +20,14 @@ export interface Task {
   recurrence: string | null;
   notes: string[];
   blockedReason?: string;
+  reminders?: Reminder[];
+}
+
+export interface Reminder {
+  id: string;
+  at: string;
+  sent: boolean;
+  note?: string;
 }
 
 export interface Config {
