@@ -1,0 +1,28 @@
+{
+  "name": "taskpipe",
+  "version": "0.1.0",
+  "description": "Marketing task engine for the terminal. The Unix of Marketing.",
+  "main": "dist/index.js",
+  "bin": {
+    "taskpipe": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": ["marketing", "tasks", "cli", "productivity"],
+  "author": "Benno Sawitzki",
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "js-yaml": "^4.1.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.13.4",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.3"
+  }
+}
