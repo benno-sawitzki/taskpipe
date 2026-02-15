@@ -97,6 +97,25 @@ taskpipe plan --afternoon        # plan afternoon (12:00-18:00)
 taskpipe plan --calendar --morning  # combine: morning free slots only
 ```
 
+### Setup & Notifications
+
+```bash
+taskpipe setup                   # interactive setup wizard
+taskpipe setup --status          # show current config
+taskpipe setup --reset           # reset to defaults, remove cron jobs
+taskpipe briefing | taskpipe notify  # send briefing via configured channel
+echo "Reminder!" | taskpipe notify --title "Hey"  # custom notification
+```
+
+The setup wizard configures:
+- **Notification channel** — terminal, Slack, Discord, email, webhook, or none
+- **Check-in schedule** — morning briefing, midday pulse, afternoon nudge, evening wrap
+- **Smart nudges** — streak protection, stale task alerts, quick win suggestions, cooldown alerts
+- **Work schedule** — days, hours, timezone
+- **Integration detection** — auto-detects contentq and leadpipe
+
+Config is saved to `.taskpipe/config.yaml`. Optionally installs cron jobs for automated check-ins.
+
 ### Ghost Tasks
 
 Auto-suggested tasks from your other tools (leadpipe, contentq):

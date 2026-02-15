@@ -14,6 +14,8 @@ import {
 } from './utils/store';
 import { formatTaskLine, formatTaskFull, printTasks, shortId } from './utils/display';
 import { rankTasks, getOpenTasks, scoreTask } from './utils/scoring';
+import { runSetup, showSetupStatus, resetSetup } from './commands/setup';
+import { runNotify } from './commands/notify';
 
 const program = new Command();
 program.name('taskpipe').description('Marketing task engine for the terminal').version('0.1.0');
@@ -1310,5 +1312,22 @@ if (existingPlan) {
     }
   });
 }
+
+// ─── SETUP ───
+program.command('setup').description('Interactive setup wizard')
+  .option('--status', 'Show current setup')
+  .option('--reset', 'Reset to defaults')
+  .action(async (opts) => {
+    if (opts.status) { showSetupStatus(); return; }
+    if (opts.reset) { resetSetup(); return; }
+    await runSetup();
+  });
+
+// ─── NOTIFY ───
+program.command('notify').description('Send notification via configured channel')
+  .option('--title <title>', 'Notification title', 'taskpipe')
+  .action(async (opts) => {
+    await runNotify(opts.title);
+  });
 
 program.parse();
