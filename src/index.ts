@@ -16,6 +16,13 @@ import { formatTaskLine, formatTaskFull, printTasks, shortId } from './utils/dis
 import { rankTasks, getOpenTasks, scoreTask } from './utils/scoring';
 import { runSetup, showSetupStatus, resetSetup } from './commands/setup';
 import { runNotify } from './commands/notify';
+import {
+  logActivity, computeProfile, getAdaptiveSchedule, getActivityStatus,
+  resetActivity, formatTime12h, loadActivity,
+} from './activity';
+
+// Auto-log CLI activity
+logActivity('cli', 'command');
 
 const program = new Command();
 program.name('taskpipe').description('Marketing task engine for the terminal').version('0.1.0');
@@ -1328,6 +1335,134 @@ program.command('notify').description('Send notification via configured channel'
   .option('--title <title>', 'Notification title', 'taskpipe')
   .action(async (opts) => {
     await runNotify(opts.title);
+  });
+
+// ─── ACTIVITY ───
+const activityCmd = program.command('activity').description('Activity tracking and adaptive timing');
+
+activityCmd.command('log').description('Log an external activity event')
+  .requiredOption('--source <source>', 'Event source (whatsapp, agent, etc.)')
+  .requiredOption('--type <type>', 'Event type (message, checkin, etc.)')
+  .option('--at <timestamp>', 'Event timestamp (ISO format)')
+  .option('--json', 'JSON output')
+  .action((opts) => {
+    logActivity(opts.source, opts.type, opts.at);
+    if (opts.json) {
+      console.log(JSON.stringify({ logged: true, source: opts.source, type: opts.type }));
+      return;
+    }
+    console.log(chalk.green(`✓ Logged ${opts.type} from ${opts.source}`));
+  });
+
+activityCmd.command('status').description('Show activity profile')
+  .option('--json', 'JSON output')
+  .action((opts) => {
+    const { data, profile, schedule } = getActivityStatus();
+
+    if (opts.json) {
+      console.log(JSON.stringify({ profile, schedule }, null, 2));
+      return;
+    }
+
+    if (!profile || profile.dataPoints === 0) {
+      console.log(chalk.gray('\n  No activity data yet. Use taskpipe commands to build your profile.\n'));
+      return;
+    }
+
+    const pct = Math.round(profile.confidence * 100);
+    console.log(chalk.bold(`\n  📊 Activity Profile (${profile.dataPoints} days of data, ${pct}% confidence)\n`));
+
+    console.log(chalk.bold('  Weekdays:'));
+    console.log(`    Usually active: ${formatTime12h(profile.weekday.avgFirstActive)} — ${formatTime12h(profile.weekday.avgLastActive)}`);
+
+    console.log(chalk.bold('\n  Weekends:'));
+    console.log(`    Usually active: ${formatTime12h(profile.weekend.avgFirstActive)} — ${formatTime12h(profile.weekend.avgLastActive)}`);
+
+    console.log(chalk.bold('\n  Suggested check-in times:'));
+    console.log(`    ☀️  Morning briefing: ${formatTime12h(schedule.morning)}`);
+    console.log(`    🔥 Midday pulse: ${formatTime12h(schedule.midday)}`);
+    console.log(`    🏁 End of day: ${formatTime12h(schedule.evening)}`);
+
+    // Compare with current schedule
+    try {
+      const setupYaml = fs.readFileSync('.taskpipe/config.yaml', 'utf-8');
+      const setupRaw = require('js-yaml').load(setupYaml) as any;
+      if (setupRaw?.schedule?.checkins) {
+        const ci = setupRaw.schedule.checkins;
+        console.log(chalk.bold('\n  Current schedule vs suggested:'));
+        if (ci.morning?.time) console.log(`    Morning: ${ci.morning.time} → suggest ${schedule.morning}`);
+        if (ci.midday?.time) console.log(`    Midday: ${ci.midday.time} → suggest ${schedule.midday}`);
+        if (ci.evening?.time) console.log(`    Evening: ${ci.evening.time} → suggest ${schedule.evening}`);
+      }
+    } catch {}
+
+    console.log('');
+  });
+
+activityCmd.command('apply').description('Apply learned schedule to config')
+  .option('--yes', 'Skip confirmation')
+  .option('--json', 'JSON output')
+  .action(async (opts) => {
+    const { profile, schedule } = getActivityStatus();
+
+    if (!profile || profile.confidence < 0.3) {
+      console.log(chalk.yellow('  Not enough data yet. Need at least 5 days of activity.'));
+      return;
+    }
+
+    if (!opts.yes) {
+      console.log(chalk.bold('\n  Suggested schedule update:\n'));
+      console.log(`    ☀️  Morning: ${formatTime12h(schedule.morning)}`);
+      console.log(`    🔥 Midday: ${formatTime12h(schedule.midday)}`);
+      console.log(`    🏁 Evening: ${formatTime12h(schedule.evening)}`);
+      console.log('');
+
+      const { confirm } = require('./prompt');
+      const ok = await confirm('  Update check-in times based on your activity?', true);
+      if (!ok) {
+        console.log(chalk.gray('  Cancelled.'));
+        return;
+      }
+    }
+
+    // Update config.yaml
+    try {
+      const configPath = '.taskpipe/config.yaml';
+      const raw = require('js-yaml').load(fs.readFileSync(configPath, 'utf-8')) as any || {};
+      if (!raw.schedule) raw.schedule = {};
+      if (!raw.schedule.checkins) raw.schedule.checkins = {};
+      if (raw.schedule.checkins.morning) raw.schedule.checkins.morning.time = schedule.morning;
+      if (raw.schedule.checkins.midday) raw.schedule.checkins.midday.time = schedule.midday;
+      if (raw.schedule.checkins.evening) raw.schedule.checkins.evening.time = schedule.evening;
+      fs.writeFileSync(configPath, require('js-yaml').dump(raw, { lineWidth: -1 }));
+
+      if (opts.json) {
+        console.log(JSON.stringify({ applied: true, schedule }));
+        return;
+      }
+      console.log(chalk.green('  ✓ Schedule updated!'));
+
+      // Update crontab if entries exist
+      try {
+        const existing = execSync('crontab -l 2>/dev/null', { encoding: 'utf-8' });
+        if (existing.includes('# taskpipe')) {
+          console.log(chalk.cyan('  ℹ  Cron jobs detected — run `taskpipe setup` to update crontab times.'));
+        }
+      } catch {}
+    } catch (err: any) {
+      console.error(chalk.red(`  ✗ Failed to update config: ${err.message}`));
+    }
+  });
+
+activityCmd.command('reset').description('Clear all activity data')
+  .option('--json', 'JSON output')
+  .action((opts) => {
+    resetActivity();
+    if (opts.json) {
+      console.log(JSON.stringify({ reset: true }));
+      return;
+    }
+    console.log(chalk.green('  ✓ Activity data cleared.'));
   });
 
 program.parse();

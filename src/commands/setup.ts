@@ -222,6 +222,26 @@ export async function runSetup(): Promise<void> {
 
   console.log('');
 
+  // 6. Adaptive Timing
+  console.log(chalk.bold('  6. Adaptive Timing (Optional)'));
+  console.log(chalk.gray('  Taskpipe can learn your schedule by tracking when you use commands'));
+  console.log(chalk.gray('  and adjusts check-in times over time.\n'));
+  const enableAdaptive = await confirm('  Enable adaptive timing?', true);
+  if (enableAdaptive) {
+    (config as any).adaptive = {
+      enabled: true,
+      minDataPoints: 5,
+      autoApply: false,
+    };
+    const autoApply = await confirm('  Auto-apply schedule changes without asking?', false);
+    if (autoApply) (config as any).adaptive.autoApply = true;
+    console.log(chalk.green('  ✓ Adaptive timing enabled'));
+  } else {
+    (config as any).adaptive = { enabled: false, minDataPoints: 5, autoApply: false };
+  }
+
+  console.log('');
+
   // Save
   saveSetupConfig(config);
   console.log(chalk.green.bold('  Done! ✨'));

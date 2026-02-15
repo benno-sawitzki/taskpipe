@@ -116,6 +116,20 @@ The setup wizard configures:
 
 Config is saved to `.taskpipe/config.yaml`. Optionally installs cron jobs for automated check-ins.
 
+### Activity Tracking & Adaptive Timing
+
+Taskpipe learns when you're active and suggests optimal check-in times.
+
+```bash
+taskpipe activity status         # show activity profile + suggested schedule
+taskpipe activity log --source whatsapp --type message   # log external activity
+taskpipe activity log --source agent --type checkin --at "2026-02-15T06:00:00"
+taskpipe activity apply          # apply learned schedule to config
+taskpipe activity reset          # clear all activity data
+```
+
+Every command you run automatically logs activity. Over time, taskpipe builds a profile of when you're active (weekday vs weekend) and suggests adjusted check-in times. The setup wizard includes an adaptive timing option.
+
 ### Ghost Tasks
 
 Auto-suggested tasks from your other tools (leadpipe, contentq):
