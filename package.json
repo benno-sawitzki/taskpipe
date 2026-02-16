@@ -14,6 +14,7 @@
   "author": "Benno Sawitzki",
   "license": "MIT",
   "dependencies": {
+    "@openbrain/cli-client": "file:../openbrain/packages/cli-client",
     "chalk": "^5.4.1",
     "commander": "^13.1.0",
     "js-yaml": "^4.1.0",

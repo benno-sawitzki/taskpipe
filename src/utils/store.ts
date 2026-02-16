@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { Task, Config, Patterns, GhostTask } from '../types';
+import { isCloudMode, getClient } from '@openbrain/cli-client';
 
 const TASKPIPE_DIR = '.taskpipe';
 const TASKS_FILE = path.join(TASKPIPE_DIR, 'tasks.json');
@@ -47,39 +48,47 @@ export function initStore(): void {
   }
 }
 
-export function loadTasks(): Task[] {
+export async function loadTasks(): Promise<Task[]> {
+  if (isCloudMode()) return getClient().listTasks();
   ensureInit();
   return JSON.parse(fs.readFileSync(TASKS_FILE, 'utf-8'));
 }
 
-export function saveTasks(tasks: Task[]): void {
+export async function saveTasks(tasks: Task[]): Promise<void> {
+  if (isCloudMode()) { await getClient().bulkWriteTasks(tasks); return; }
   fs.writeFileSync(TASKS_FILE, JSON.stringify(tasks, null, 2));
 }
 
-export function loadConfig(): Config {
+export async function loadConfig(): Promise<Config> {
+  if (isCloudMode()) return getClient().getConfig('taskpipe');
   ensureInit();
   return yaml.load(fs.readFileSync(CONFIG_FILE, 'utf-8')) as Config;
 }
 
-export function saveConfig(config: Config): void {
+export async function saveConfig(config: Config): Promise<void> {
+  if (isCloudMode()) { await getClient().writeConfig('taskpipe', config); return; }
   fs.writeFileSync(CONFIG_FILE, yaml.dump(config));
 }
 
-export function loadPatterns(): Patterns {
+export async function loadPatterns(): Promise<Patterns> {
+  if (isCloudMode()) return getClient().getPatterns();
   ensureInit();
   return JSON.parse(fs.readFileSync(PATTERNS_FILE, 'utf-8'));
 }
 
-export function savePatterns(patterns: Patterns): void {
+export async function savePatterns(patterns: Patterns): Promise<void> {
+  if (isCloudMode()) { await getClient().writePatterns(patterns); return; }
   fs.writeFileSync(PATTERNS_FILE, JSON.stringify(patterns, null, 2));
 }
 
-export function loadGhosts(): GhostTask[] {
+export async function loadGhosts(): Promise<GhostTask[]> {
+  if (isCloudMode()) return []; // ghosts are local-only
   ensureInit();
   return JSON.parse(fs.readFileSync(GHOSTS_FILE, 'utf-8'));
 }
 
-export function saveGhosts(ghosts: GhostTask[]): void {
+export async function saveGhosts(ghosts: GhostTask[]): Promise<void> {
+  if (isCloudMode()) return; // ghosts are local-only
   fs.writeFileSync(GHOSTS_FILE, JSON.stringify(ghosts, null, 2));
 }
 

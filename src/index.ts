@@ -28,10 +28,30 @@ const program = new Command();
 program.name('taskpipe').description('Marketing task engine for the terminal').version('0.1.0');
 
 // ─── INIT ───
-program.command('init').description('Initialize taskpipe').action(() => {
-  initStore();
-  console.log(chalk.green('✓ Taskpipe initialized. Ready to ship.'));
-});
+program.command('init').description('Initialize taskpipe')
+  .option('--cloud', 'Configure cloud mode')
+  .option('--url <url>', 'Open Brain API URL')
+  .option('--key <key>', 'API key')
+  .action(async (opts: any) => {
+    if (opts.cloud) {
+      const { OpenBrainClient, saveOpenBrainConfig, getConfigPath } = await import('@openbrain/cli-client');
+      const url = opts.url || process.env.OPENBRAIN_URL || 'https://openbrain.bennosan.com';
+      const key = opts.key || process.env.OPENBRAIN_API_KEY;
+      if (!key) { console.error(chalk.red('API key required. Use --key <key> or set OPENBRAIN_API_KEY')); process.exit(1); }
+      process.stdout.write('Testing connection... ');
+      try {
+        const client = new OpenBrainClient(key, url);
+        const ok = await client.testConnection();
+        if (!ok) throw new Error('Connection failed');
+        console.log(chalk.green('OK ✓'));
+      } catch (e: any) { console.log(chalk.red('FAILED')); console.error(e.message); process.exit(1); }
+      saveOpenBrainConfig({ api_url: url, api_key: key, mode: 'cloud' });
+      console.log(chalk.green(`✓ Cloud mode configured. Config saved to ${getConfigPath()}`));
+      return;
+    }
+    initStore();
+    console.log(chalk.green('✓ Taskpipe initialized. Ready to ship.'));
+  });
 
 // ─── ADD ───
 program.command('add <content>').description('Add a task')
@@ -44,8 +64,8 @@ program.command('add <content>').description('Add a task')
   .option('--stake <stake>', 'What\'s at stake')
   .option('--links <links>', 'key:value pairs comma-separated')
   .option('--json', 'JSON output')
-  .action((content, opts) => {
-    const tasks = loadTasks();
+  .action(async (content, opts) => {
+    const tasks = await loadTasks();
     const links: Record<string, string | null> = {};
     if (opts.links) {
       opts.links.split(',').forEach((l: string) => {
@@ -76,7 +96,7 @@ program.command('add <content>').description('Add a task')
       notes: [],
     };
     tasks.push(task);
-    saveTasks(tasks);
+    await saveTasks(tasks);
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
     console.log(chalk.green(`✓ Added: ${formatTaskLine(task)}`));
   });
@@ -90,9 +110,9 @@ program.command('list').description('List tasks')
   .option('--blocked', 'Show blocked tasks')
   .option('--all', 'Include done tasks')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    let tasks = loadTasks();
-    const config = loadConfig();
+  .action(async (opts) => {
+    let tasks = await loadTasks();
+    const config = await loadConfig();
 
     if (!opts.all) tasks = tasks.filter(t => !['done', 'skipped'].includes(t.status));
     if (opts.blocked) { tasks = tasks.filter(t => t.status === 'blocked'); }
@@ -121,8 +141,8 @@ program.command('list').description('List tasks')
 // ─── SHOW ───
 program.command('show <id>').description('Show task details')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
@@ -141,8 +161,8 @@ program.command('edit <id>').description('Edit a task')
   .option('--content <text>', 'Content')
   .option('--note <text>', 'Add a note')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     if (opts.due) task.due = parseDate(opts.due);
@@ -155,7 +175,7 @@ program.command('edit <id>').description('Edit a task')
     if (opts.content) task.content = opts.content;
     if (opts.note) task.notes.push(opts.note);
     task.updatedAt = new Date().toISOString();
-    saveTasks(tasks);
+    await saveTasks(tasks);
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
     console.log(chalk.green(`✓ Updated: ${formatTaskLine(task)}`));
   });
@@ -163,12 +183,12 @@ program.command('edit <id>').description('Edit a task')
 // ─── DELETE ───
 program.command('delete <id>').description('Delete a task')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    let tasks = loadTasks();
+  .action(async (id, opts) => {
+    let tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     tasks = tasks.filter(t => t.id !== task.id);
-    saveTasks(tasks);
+    await saveTasks(tasks);
     if (opts.json) { console.log(JSON.stringify({ deleted: task.id })); return; }
     console.log(chalk.green(`✓ Deleted: ${task.content}`));
   });
@@ -178,8 +198,8 @@ program.command('done <id>').description('Complete a task')
   .option('--time <min>', 'Actual time spent')
   .option('--difficulty <level>', 'easy/medium/hard')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     task.status = 'done';
@@ -187,10 +207,10 @@ program.command('done <id>').description('Complete a task')
     task.updatedAt = new Date().toISOString();
     if (opts.time) task.actual = parseInt(opts.time);
     if (opts.difficulty) task.difficulty = opts.difficulty;
-    saveTasks(tasks);
+    await saveTasks(tasks);
 
     // Update patterns
-    const patterns = loadPatterns();
+    const patterns = await loadPatterns();
     const now = new Date();
     patterns.completions.push({
       date: now.toISOString(),
@@ -205,10 +225,10 @@ program.command('done <id>').description('Complete a task')
     });
     const td = today();
     patterns.dailyCompletions[td] = (patterns.dailyCompletions[td] || 0) + 1;
-    savePatterns(patterns);
+    await savePatterns(patterns);
 
     // Update streaks
-    const config = loadConfig();
+    const config = await loadConfig();
     if (config.streaks.lastCompletionDate !== td) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -220,7 +240,7 @@ program.command('done <id>').description('Complete a task')
       }
       config.streaks.lastCompletionDate = td;
       if (config.streaks.current > config.streaks.best) config.streaks.best = config.streaks.current;
-      saveConfig(config);
+      await saveConfig(config);
     }
 
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
@@ -235,28 +255,28 @@ program.command('done <id>').description('Complete a task')
 // ─── BLOCK / UNBLOCK ───
 program.command('block <id> [reason]').description('Block a task')
   .option('--json', 'JSON output')
-  .action((id, reason, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, reason, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     task.status = 'blocked';
     task.blockedReason = reason || 'No reason given';
     task.updatedAt = new Date().toISOString();
-    saveTasks(tasks);
+    await saveTasks(tasks);
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
     console.log(chalk.yellow(`🚫 Blocked: ${task.content} — ${task.blockedReason}`));
   });
 
 program.command('unblock <id>').description('Unblock a task')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     task.status = 'todo';
     task.blockedReason = undefined;
     task.updatedAt = new Date().toISOString();
-    saveTasks(tasks);
+    await saveTasks(tasks);
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
     console.log(chalk.green(`✓ Unblocked: ${task.content}`));
   });
@@ -265,14 +285,14 @@ program.command('unblock <id>').description('Unblock a task')
 program.command('delegate <id>').description('Delegate a task')
   .requiredOption('--to <person>', 'Delegate to')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     task.status = 'delegated';
     task.delegatedTo = opts.to;
     task.updatedAt = new Date().toISOString();
-    saveTasks(tasks);
+    await saveTasks(tasks);
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
     console.log(chalk.cyan(`→ Delegated to ${opts.to}: ${task.content}`));
   });
@@ -280,9 +300,9 @@ program.command('delegate <id>').description('Delegate a task')
 // ─── NOW / PICK ───
 program.command('now').description('The ONE thing to do next')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
-    const config = loadConfig();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
+    const config = await loadConfig();
     let open = getOpenTasks(tasks);
     if (config.focus) {
       const f = config.focus.toLowerCase();
@@ -307,8 +327,8 @@ program.command('now').description('The ONE thing to do next')
 
 program.command('pick').description('Pick next task (skip if you don\'t like it)')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     let open = getOpenTasks(tasks).filter(t => t.status !== 'skipped');
     const ranked = rankTasks(open);
     if (ranked.length === 0) {
@@ -323,13 +343,13 @@ program.command('pick').description('Pick next task (skip if you don\'t like it)
 
 program.command('skip <id>').description('Skip a suggested task')
   .option('--json', 'JSON output')
-  .action((id, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     task.status = 'skipped';
     task.updatedAt = new Date().toISOString();
-    saveTasks(tasks);
+    await saveTasks(tasks);
     // Show next
     let open = getOpenTasks(tasks);
     const ranked = rankTasks(open);
@@ -344,8 +364,8 @@ program.command('skip <id>').description('Skip a suggested task')
 // ─── QUICK ───
 program.command('quick').description('Quick wins under 15 min')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     const quick = getOpenTasks(tasks).filter(t => t.estimate && t.estimate <= 15);
     if (opts.json) { console.log(JSON.stringify(quick, null, 2)); return; }
     if (quick.length === 0) { console.log(chalk.gray('No quick wins available.')); return; }
@@ -356,10 +376,10 @@ program.command('quick').description('Quick wins under 15 min')
 // ─── STUCK ───
 program.command('stuck').description('Tasks you\'ve been avoiding')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const config = loadConfig();
+  .action(async (opts) => {
+    const config = await loadConfig();
     const staleDays = config.stale?.days || 3;
-    const tasks = loadTasks();
+    const tasks = await loadTasks();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - staleDays);
     const stuck = getOpenTasks(tasks).filter(t =>
@@ -380,8 +400,8 @@ program.command('stuck').description('Tasks you\'ve been avoiding')
 program.command('wins').description('Completed tasks')
   .option('--week', 'Show weekly wins')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     const now = new Date();
     let cutoff: Date;
     if (opts.week) {
@@ -404,23 +424,23 @@ program.command('wins').description('Completed tasks')
 
 // ─── FOCUS / UNFOCUS ───
 program.command('focus [query]').description('Set focus filter')
-  .action((query) => {
-    const config = loadConfig();
+  .action(async (query) => {
+    const config = await loadConfig();
     if (!query) {
       if (config.focus) console.log(chalk.cyan(`🔍 Focused on: "${config.focus}"`));
       else console.log(chalk.gray('No focus set.'));
       return;
     }
     config.focus = query;
-    saveConfig(config);
+    await saveConfig(config);
     console.log(chalk.cyan(`🔍 Focused on: "${query}". Run 'taskpipe unfocus' to clear.`));
   });
 
 program.command('unfocus').description('Clear focus filter')
-  .action(() => {
-    const config = loadConfig();
+  .action(async () => {
+    const config = await loadConfig();
     config.focus = null;
-    saveConfig(config);
+    await saveConfig(config);
     console.log(chalk.green('✓ Focus cleared. Showing everything.'));
   });
 
@@ -431,8 +451,8 @@ program.command('plan').description('Plan your session')
   .option('--30m', '30 min session')
   .option('--low-energy', 'Low energy mode')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     let open = getOpenTasks(tasks);
 
     if (opts.lowEnergy) open = open.filter(t => t.energy === 'low');
@@ -470,8 +490,8 @@ program.command('plan').description('Plan your session')
 // ─── STAKES ───
 program.command('stakes').description('Tasks with stakes')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     const staked = getOpenTasks(tasks).filter(t => t.stake);
     const ranked = rankTasks(staked);
     if (opts.json) { console.log(JSON.stringify(ranked, null, 2)); return; }
@@ -498,8 +518,8 @@ program.command('stakes').description('Tasks with stakes')
 // ─── STREAK ───
 program.command('streak').description('Show your streak')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const config = loadConfig();
+  .action(async (opts) => {
+    const config = await loadConfig();
     if (opts.json) { console.log(JSON.stringify(config.streaks)); return; }
     const s = config.streaks;
     console.log(`\n  🔥 Current streak: ${s.current} day${s.current !== 1 ? 's' : ''}`);
@@ -510,8 +530,8 @@ program.command('streak').description('Show your streak')
 // ─── MOMENTUM ───
 program.command('momentum').description('Your momentum')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const patterns = loadPatterns();
+  .action(async (opts) => {
+    const patterns = await loadPatterns();
     const last7: number[] = [];
     for (let i = 0; i < 7; i++) {
       const d = new Date(); d.setDate(d.getDate() - i);
@@ -534,8 +554,8 @@ program.command('momentum').description('Your momentum')
 // ─── COOLDOWN ───
 program.command('cooldown').description('Should you take a break?')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     const td = today();
     const todayDone = tasks.filter(t => t.status === 'done' && t.completedAt?.startsWith(td) && t.energy === 'high');
     if (opts.json) { console.log(JSON.stringify({ highEnergyDone: todayDone.length, needsBreak: todayDone.length >= 3 })); return; }
@@ -550,8 +570,8 @@ program.command('cooldown').description('Should you take a break?')
 // ─── INSIGHTS ───
 program.command('insights').description('Learned patterns')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const patterns = loadPatterns();
+  .action(async (opts) => {
+    const patterns = await loadPatterns();
     if (patterns.completions.length < 3) {
       console.log(chalk.gray('Not enough data yet. Complete more tasks with --time and --difficulty.'));
       return;
@@ -609,9 +629,9 @@ program.command('insights').description('Learned patterns')
 program.command('review').description('Weekly review')
   .option('--week <date>', 'Week start date (Monday)')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
-    const patterns = loadPatterns();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
+    const patterns = await loadPatterns();
 
     let weekStart: Date;
     if (opts.week) {
@@ -670,8 +690,8 @@ program.command('review').description('Weekly review')
 // ─── SEARCH ───
 program.command('search <query>').description('Search tasks')
   .option('--json', 'JSON output')
-  .action((query, opts) => {
-    const tasks = loadTasks();
+  .action(async (query, opts) => {
+    const tasks = await loadTasks();
     const q = query.toLowerCase();
     const results = tasks.filter(t =>
       t.content.toLowerCase().includes(q) ||
@@ -685,8 +705,8 @@ program.command('search <query>').description('Search tasks')
 // ─── STATS ───
 program.command('stats').description('Overview statistics')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     const open = tasks.filter(t => ['todo', 'doing'].includes(t.status));
     const done = tasks.filter(t => t.status === 'done');
     const blocked = tasks.filter(t => t.status === 'blocked');
@@ -717,12 +737,12 @@ program.command('ghost').description('Auto-suggested tasks')
   .option('--accept <id>', 'Accept a ghost task')
   .option('--dismiss <id>', 'Dismiss a ghost task')
   .option('--json', 'JSON output')
-  .action((opts) => {
+  .action(async (opts) => {
     if (opts.accept) {
-      const ghosts = loadGhosts();
+      const ghosts = await loadGhosts();
       const ghost = ghosts.find(g => g.id.startsWith(opts.accept));
       if (!ghost) { console.error(chalk.red('Ghost task not found.')); process.exit(1); }
-      const tasks = loadTasks();
+      const tasks = await loadTasks();
       const task: Task = {
         id: uuid(), content: ghost.content, status: 'todo',
         priority: ghost.suggestedPriority as any, energy: ghost.suggestedEnergy as any,
@@ -733,20 +753,20 @@ program.command('ghost').description('Auto-suggested tasks')
         focusGroup: null, recurrence: null, notes: [`Auto-generated: ${ghost.reason}`],
       };
       tasks.push(task);
-      saveTasks(tasks);
+      await saveTasks(tasks);
       ghost.dismissed = true;
-      saveGhosts(ghosts);
+      await saveGhosts(ghosts);
       if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
       console.log(chalk.green(`✓ Accepted: ${task.content}`));
       return;
     }
 
     if (opts.dismiss) {
-      const ghosts = loadGhosts();
+      const ghosts = await loadGhosts();
       const ghost = ghosts.find(g => g.id.startsWith(opts.dismiss));
       if (!ghost) { console.error(chalk.red('Ghost task not found.')); process.exit(1); }
       ghost.dismissed = true;
-      saveGhosts(ghosts);
+      await saveGhosts(ghosts);
       console.log(chalk.gray('Dismissed.'));
       return;
     }
@@ -816,7 +836,7 @@ program.command('ghost').description('Auto-suggested tasks')
       }
     } catch {}
 
-    saveGhosts(ghosts);
+    await saveGhosts(ghosts);
 
     const active = ghosts.filter(g => !g.dismissed);
     if (opts.json) { console.log(JSON.stringify(active, null, 2)); return; }
@@ -836,22 +856,22 @@ program.command('buddy').description('Accountability buddy')
   .option('--stop', 'Disable')
   .option('--status', 'Show status')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const config = loadConfig();
+  .action(async (opts) => {
+    const config = await loadConfig();
     if (opts.start) {
       config.buddy.enabled = true;
-      saveConfig(config);
+      await saveConfig(config);
       console.log(chalk.green('✓ Buddy mode enabled. Stay accountable! 🤝'));
       return;
     }
     if (opts.stop) {
       config.buddy.enabled = false;
-      saveConfig(config);
+      await saveConfig(config);
       console.log(chalk.gray('Buddy mode disabled.'));
       return;
     }
     // Status
-    const tasks = loadTasks();
+    const tasks = await loadTasks();
     const doing = tasks.find(t => t.status === 'doing');
     if (opts.json) { console.log(JSON.stringify({ enabled: config.buddy.enabled, currentTask: doing || null })); return; }
     console.log(`\n  🤝 Buddy: ${config.buddy.enabled ? chalk.green('ON') : chalk.gray('OFF')}`);
@@ -868,8 +888,8 @@ program.command('remind <id> [time...]').description('Add/remove reminders on a 
   .option('--remove', 'Clear all reminders')
   .option('--note <text>', 'Custom reminder message')
   .option('--json', 'JSON output')
-  .action((id, timeArgs, opts) => {
-    const tasks = loadTasks();
+  .action(async (id, timeArgs, opts) => {
+    const tasks = await loadTasks();
     const task = findTask(tasks, id);
     if (!task) { console.error(chalk.red('Task not found.')); process.exit(1); }
     if (!task.reminders) task.reminders = [];
@@ -877,7 +897,7 @@ program.command('remind <id> [time...]').description('Add/remove reminders on a 
     if (opts.remove) {
       task.reminders = [];
       task.updatedAt = new Date().toISOString();
-      saveTasks(tasks);
+      await saveTasks(tasks);
       if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
       console.log(chalk.green(`✓ Cleared reminders for: ${task.content}`));
       return;
@@ -892,7 +912,7 @@ program.command('remind <id> [time...]').description('Add/remove reminders on a 
     if (opts.note) reminder.note = opts.note;
     task.reminders.push(reminder);
     task.updatedAt = new Date().toISOString();
-    saveTasks(tasks);
+    await saveTasks(tasks);
 
     if (opts.json) { console.log(JSON.stringify(task, null, 2)); return; }
     const when = new Date(parsed);
@@ -904,8 +924,8 @@ program.command('remind <id> [time...]').description('Add/remove reminders on a 
 program.command('reminders').description('List all upcoming reminders')
   .option('--due', 'Show only due (unfired) reminders')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
     const now = new Date();
     const all: Array<{ task: Task; reminder: Reminder }> = [];
 
@@ -952,7 +972,6 @@ function fetchCalendarEvents(from: string, to: string): any[] {
       const parsed = JSON.parse(output);
       return Array.isArray(parsed) ? parsed : (parsed.events || parsed.items || []);
     } catch {
-      // Parse text output as fallback
       return parseCalendarText(output);
     }
   } catch (e: any) {
@@ -968,7 +987,6 @@ function parseCalendarText(text: string): any[] {
   const events: any[] = [];
   const lines = text.split('\n').filter(l => l.trim());
   for (const line of lines) {
-    // Try to parse common gog text formats
     const match = line.match(/(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2})\s*[-–]\s*(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2})\s+(.*)/);
     if (match) {
       events.push({ start: { dateTime: match[1] }, end: { dateTime: match[2] }, summary: match[3].trim() });
@@ -1066,7 +1084,6 @@ program.command('calendar').description('Show calendar events and free slots')
       }
     }
 
-    // Free slots (only for single day)
     if (!opts.week) {
       const targetDate = opts.tomorrow ? new Date(now.getTime() + 86400000) : now;
       const dayStart = new Date(targetDate); dayStart.setHours(8, 0, 0, 0);
@@ -1087,23 +1104,18 @@ program.command('calendar').description('Show calendar events and free slots')
 // ─── BRIEFING ───
 program.command('briefing').description('Smart daily briefing')
   .option('--json', 'JSON output')
-  .action((opts) => {
-    const tasks = loadTasks();
-    const config = loadConfig();
+  .action(async (opts) => {
+    const tasks = await loadTasks();
+    const config = await loadConfig();
     const td = today();
     const now = new Date();
 
-    // Calendar events
     const events = fetchCalendarEvents(td, td);
     const sortedEvents = events.map(getEventTimes).sort((a, b) => a.start.getTime() - b.start.getTime());
 
-    // Tasks due today
     const dueToday = getOpenTasks(tasks).filter(t => t.due === td);
-
-    // Overdue tasks
     const overdue = getOpenTasks(tasks).filter(t => t.due && t.due < td);
 
-    // Upcoming reminders (next 24h)
     const tomorrow = new Date(now.getTime() + 86400000);
     const upcomingReminders: Array<{ task: Task; reminder: Reminder }> = [];
     for (const task of tasks) {
@@ -1116,14 +1128,12 @@ program.command('briefing').description('Smart daily briefing')
     }
     upcomingReminders.sort((a, b) => new Date(a.reminder.at).getTime() - new Date(b.reminder.at).getTime());
 
-    // Ghost tasks
     let ghostCount = 0;
     try {
-      const ghosts = loadGhosts();
+      const ghosts = await loadGhosts();
       ghostCount = ghosts.filter(g => !g.dismissed).length;
     } catch {}
 
-    // Top ranked for plan
     const ranked = rankTasks(getOpenTasks(tasks)).slice(0, 5);
 
     if (opts.json) {
@@ -1133,13 +1143,11 @@ program.command('briefing').description('Smart daily briefing')
 
     console.log(chalk.bold.cyan(`\n  ☀️  Good ${now.getHours() < 12 ? 'morning' : now.getHours() < 17 ? 'afternoon' : 'evening'}! Here's your briefing:\n`));
 
-    // Streak
     if (config.streaks.current > 0) {
       console.log(chalk.yellow(`  🔥 Streak: ${config.streaks.current} day${config.streaks.current !== 1 ? 's' : ''} (best: ${config.streaks.best})`));
       console.log('');
     }
 
-    // Calendar
     if (sortedEvents.length > 0) {
       console.log(chalk.bold('  📅 Today\'s Calendar:'));
       for (const ev of sortedEvents) {
@@ -1154,21 +1162,18 @@ program.command('briefing').description('Smart daily briefing')
       console.log(chalk.green('  📅 No calendar events today — open day!\n'));
     }
 
-    // Overdue
     if (overdue.length > 0) {
       console.log(chalk.red.bold(`  ⚠️  Overdue (${overdue.length}):`));
       overdue.forEach(t => console.log(`    ${formatTaskLine(t)}`));
       console.log('');
     }
 
-    // Due today
     if (dueToday.length > 0) {
       console.log(chalk.bold(`  📋 Due Today (${dueToday.length}):`));
       dueToday.forEach(t => console.log(`    ${formatTaskLine(t)}`));
       console.log('');
     }
 
-    // Reminders
     if (upcomingReminders.length > 0) {
       console.log(chalk.bold(`  ⏰ Upcoming Reminders:`));
       for (const { task, reminder } of upcomingReminders) {
@@ -1178,12 +1183,10 @@ program.command('briefing').description('Smart daily briefing')
       console.log('');
     }
 
-    // Ghost tasks
     if (ghostCount > 0) {
       console.log(chalk.gray(`  👻 ${ghostCount} ghost task${ghostCount !== 1 ? 's' : ''} waiting — run: taskpipe ghost\n`));
     }
 
-    // Suggested plan
     if (ranked.length > 0) {
       console.log(chalk.bold('  🎯 Suggested Plan:'));
       ranked.forEach((t, i) => console.log(`    ${i + 1}. ${formatTaskLine(t)}`));
@@ -1192,10 +1195,6 @@ program.command('briefing').description('Smart daily briefing')
   });
 
 // ─── ENHANCED PLAN (calendar/morning/afternoon) ───
-// Patch existing plan command by adding a new 'plan-cal' internal and modifying plan
-// Actually, we need to modify the existing plan command. Let's add calendar-aware planning as a separate handler.
-// Since Commander doesn't allow easy modification, we'll use a hook approach.
-
 const existingPlan = program.commands.find(c => c.name() === 'plan');
 if (existingPlan) {
   existingPlan
@@ -1204,10 +1203,9 @@ if (existingPlan) {
     .option('--afternoon', 'Plan afternoon (12:00-18:00)');
 
   const originalAction = (existingPlan as any)._actionHandler;
-  existingPlan.action((opts: any) => {
+  existingPlan.action(async (opts: any) => {
     if (!opts.calendar && !opts.morning && !opts.afternoon) {
-      // Call original - but we can't easily, so replicate with due-date boost
-      const tasks = loadTasks();
+      const tasks = await loadTasks();
       let open = getOpenTasks(tasks);
       if (opts.lowEnergy) open = open.filter(t => t.energy === 'low');
 
@@ -1239,8 +1237,7 @@ if (existingPlan) {
       return;
     }
 
-    // Calendar-aware / time-of-day planning
-    const tasks = loadTasks();
+    const tasks = await loadTasks();
     let open = getOpenTasks(tasks);
     if (opts.lowEnergy) open = open.filter(t => t.energy === 'low');
     const ranked = rankTasks(open);
@@ -1268,7 +1265,6 @@ if (existingPlan) {
       const slots = calculateFreeSlots(events, dayStart, dayEnd);
       const totalFree = slots.reduce((s, sl) => s + sl.minutes, 0);
 
-      // Fit tasks into free slots
       const plan: Array<{ task: Task; slot: typeof slots[0] }> = [];
       const usedSlots = slots.map(s => ({ ...s, remaining: s.minutes }));
 
@@ -1301,7 +1297,6 @@ if (existingPlan) {
       if (unfitted > 0) console.log(chalk.gray(`\n  ${unfitted} more task${unfitted !== 1 ? 's' : ''} don't fit in today's free time.`));
       console.log('');
     } else {
-      // Morning/afternoon without calendar
       const totalMin = Math.round((dayEnd.getTime() - dayStart.getTime()) / 60000);
       const plan: Task[] = [];
       let remaining = totalMin;
@@ -1383,7 +1378,6 @@ activityCmd.command('status').description('Show activity profile')
     console.log(`    🔥 Midday pulse: ${formatTime12h(schedule.midday)}`);
     console.log(`    🏁 End of day: ${formatTime12h(schedule.evening)}`);
 
-    // Compare with current schedule
     try {
       const setupYaml = fs.readFileSync('.taskpipe/config.yaml', 'utf-8');
       const setupRaw = require('js-yaml').load(setupYaml) as any;
@@ -1425,7 +1419,6 @@ activityCmd.command('apply').description('Apply learned schedule to config')
       }
     }
 
-    // Update config.yaml
     try {
       const configPath = '.taskpipe/config.yaml';
       const raw = require('js-yaml').load(fs.readFileSync(configPath, 'utf-8')) as any || {};
@@ -1442,7 +1435,6 @@ activityCmd.command('apply').description('Apply learned schedule to config')
       }
       console.log(chalk.green('  ✓ Schedule updated!'));
 
-      // Update crontab if entries exist
       try {
         const existing = execSync('crontab -l 2>/dev/null', { encoding: 'utf-8' });
         if (existing.includes('# taskpipe')) {

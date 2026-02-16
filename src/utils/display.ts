@@ -61,6 +61,26 @@ export function formatTaskFull(task: Task): string {
   if (Object.keys(task.links).length) {
     const linkStr = Object.entries(task.links).filter(([,v]) => v).map(([k,v]) => `${k}:${v}`).join(', ');
     if (linkStr) lines.push(`  Links:    ${linkStr}`);
+    // Show linked file contents
+    for (const [key, val] of Object.entries(task.links)) {
+      if (!val) continue;
+      try {
+        const fs = require('fs');
+        const path = require('path');
+        // Try relative to cwd, then absolute
+        const candidates = [path.resolve(process.cwd(), val), val];
+        for (const fp of candidates) {
+          if (fs.existsSync(fp) && fs.statSync(fp).isFile()) {
+            const content = fs.readFileSync(fp, 'utf-8');
+            lines.push('');
+            lines.push(chalk.cyan(`  ── ${key} (${val}) ──`));
+            content.split('\n').forEach((l: string) => lines.push(`  ${l}`));
+            lines.push(chalk.cyan(`  ── end ──`));
+            break;
+          }
+        }
+      } catch { /* skip unreadable */ }
+    }
   }
   if (task.notes.length) {
     lines.push(`  Notes:`);
